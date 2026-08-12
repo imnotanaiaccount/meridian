@@ -98,6 +98,10 @@
   .tile-menu{ flex-shrink:0; width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; opacity:.5; }
   .tile-menu:active{ opacity:1; transform:scale(.92); }
   .status-pill{ flex-shrink:0; display:inline-flex; align-items:center; gap:5px; padding:4px 9px 4px 7px; border-radius:20px; font-size:10.5px; font-weight:800; white-space:nowrap; }
+  .status-picker{ display:flex; flex-wrap:wrap; gap:8px; }
+  .status-pick{ display:inline-flex; align-items:center; gap:6px; padding:9px 13px; border-radius:14px; font-size:12.5px; font-weight:700; opacity:.5; box-shadow:inset 0 0 0 1.5px transparent; }
+  .status-pick.active{ opacity:1; box-shadow:inset 0 0 0 1.5px currentColor; }
+  .status-pick:active{ transform:scale(.96); }
   .status-pill:active{ transform:scale(.95); }
   .status-dot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
   .status-option{ width:100%; display:flex; align-items:center; gap:11px; padding:13px 4px; border-bottom:1px solid var(--line); font-size:14px; font-weight:600; text-align:left; }
@@ -240,14 +244,17 @@ var SUPABASE_URL = "https://tjdrafrolobgkqrxitwq.supabase.co";
 var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqZHJhZnJvbG9iZ2txcnhpdHdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0OTE1MTgsImV4cCI6MjEwMjA2NzUxOH0.cGWTARlpAj4VYN8If80UKhu9W9X48hmx7ASW6thBz7c";
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 var authHost = document.getElementById("auth-host");
-var authMode = "signin"; /* 'signin' | 'signup' */
+var authMode = "signin"; /* 'signin' | 'signup' | 'reset' | 'newpassword' */
 var authEmailOpen = false;
+var passwordRecoveryPending = false;
 
 function authGoogleIcon(){
   return '<svg width="17" height="17" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.87 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.98A9 9 0 0 0 0 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .98 4.97l2.97 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>';
 }
 function renderAuthScreen(errorMsg, noticeMsg){
   app.style.display = "none";
+  if (authMode === "reset") return renderResetScreen(errorMsg, noticeMsg);
+  if (authMode === "newpassword") return renderNewPasswordScreen(errorMsg, noticeMsg);
   var isSignup = authMode === "signup";
   authHost.innerHTML = "";
   var wrap = el("div", { class:"auth-wrap" });
@@ -290,6 +297,16 @@ function renderAuthScreen(errorMsg, noticeMsg){
       if (isSignup) signUpEmail(email, pw); else signInEmail(email, pw);
     });
     wrap.appendChild(form);
+
+    if (!isSignup){
+      var forgotBtn = el("button", { type:"button", class:"auth-email-toggle", text:"Forgot password?" });
+      forgotBtn.style.marginTop = "-2px";
+      forgotBtn.addEventListener("click", function(){
+        authMode = "reset";
+        renderAuthScreen();
+      });
+      wrap.appendChild(forgotBtn);
+    }
   }
 
   var switchRow = el("div", { class:"auth-switch" });
@@ -298,6 +315,76 @@ function renderAuthScreen(errorMsg, noticeMsg){
   switchRow.appendChild(document.createTextNode(isSignup ? "Already have an account? " : "New here? "));
   switchRow.appendChild(switchBtn);
   wrap.appendChild(switchRow);
+
+  authHost.innerHTML = "";
+  authHost.appendChild(wrap);
+}
+function renderResetScreen(errorMsg, noticeMsg){
+  authHost.innerHTML = "";
+  var wrap = el("div", { class:"auth-wrap" });
+  var mark = el("div", { class:"auth-mark" }); mark.innerHTML = svgIcon("sparkle", 22, "#fff");
+  wrap.appendChild(mark);
+  wrap.appendChild(el("h1", { class:"display", text:"Reset your password" }));
+  wrap.appendChild(el("p", { class:"sub", text:"Enter your account email and we'll send you a link to set a new password." }));
+  if (errorMsg) wrap.appendChild(el("div", { class:"auth-error", text: errorMsg }));
+  if (noticeMsg) wrap.appendChild(el("div", { class:"auth-notice", text: noticeMsg }));
+
+  var form = el("form", {});
+  var emailField = el("div", { class:"auth-field" }, [
+    el("label", { text:"Email" }),
+    el("input", { type:"email", id:"reset-email", autocomplete:"email", required:"required" })
+  ]);
+  form.appendChild(emailField);
+  var submitBtn = el("button", { class:"auth-submit", type:"submit", text:"Send reset link" });
+  form.appendChild(submitBtn);
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var email = document.getElementById("reset-email").value.trim();
+    sendPasswordReset(email);
+  });
+  wrap.appendChild(form);
+
+  var switchRow = el("div", { class:"auth-switch" });
+  var switchBtn = el("button", { type:"button", text:"Back to sign in" });
+  switchBtn.addEventListener("click", function(){ authMode = "signin"; authEmailOpen = true; renderAuthScreen(); });
+  switchRow.appendChild(switchBtn);
+  wrap.appendChild(switchRow);
+
+  authHost.innerHTML = "";
+  authHost.appendChild(wrap);
+}
+function renderNewPasswordScreen(errorMsg, noticeMsg){
+  authHost.innerHTML = "";
+  var wrap = el("div", { class:"auth-wrap" });
+  var mark = el("div", { class:"auth-mark" }); mark.innerHTML = svgIcon("sparkle", 22, "#fff");
+  wrap.appendChild(mark);
+  wrap.appendChild(el("h1", { class:"display", text:"Set a new password" }));
+  wrap.appendChild(el("p", { class:"sub", text:"You're verified — choose a new password for your account." }));
+  if (errorMsg) wrap.appendChild(el("div", { class:"auth-error", text: errorMsg }));
+  if (noticeMsg) wrap.appendChild(el("div", { class:"auth-notice", text: noticeMsg }));
+
+  var form = el("form", {});
+  var pwField = el("div", { class:"auth-field" }, [
+    el("label", { text:"New password" }),
+    el("input", { type:"password", id:"newpw-1", autocomplete:"new-password", required:"required", minlength:"6" })
+  ]);
+  var pwField2 = el("div", { class:"auth-field" }, [
+    el("label", { text:"Confirm new password" }),
+    el("input", { type:"password", id:"newpw-2", autocomplete:"new-password", required:"required", minlength:"6" })
+  ]);
+  form.appendChild(pwField);
+  form.appendChild(pwField2);
+  var submitBtn = el("button", { class:"auth-submit", type:"submit", text:"Update password" });
+  form.appendChild(submitBtn);
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var p1 = document.getElementById("newpw-1").value;
+    var p2 = document.getElementById("newpw-2").value;
+    if (p1.length < 6){ renderNewPasswordScreen("Password must be at least 6 characters."); return; }
+    if (p1 !== p2){ renderNewPasswordScreen("Passwords don't match."); return; }
+    updatePasswordAfterReset(p1);
+  });
+  wrap.appendChild(form);
 
   authHost.innerHTML = "";
   authHost.appendChild(wrap);
@@ -327,12 +414,31 @@ async function signInEmail(email, pw){
   var res = await sb.auth.signInWithPassword({ email: email, password: pw });
   if (res.error) renderAuthScreen(res.error.message);
 }
+async function sendPasswordReset(email){
+  if (!email){ renderResetScreen("Enter your email first."); return; }
+  var redirectTo = window.location.origin + window.location.pathname;
+  var res = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectTo });
+  if (res.error){ renderResetScreen(res.error.message); return; }
+  renderResetScreen(null, "If that email has an account, a reset link is on its way. Check your inbox.");
+}
+async function updatePasswordAfterReset(pw){
+  var res = await sb.auth.updateUser({ password: pw });
+  if (res.error){ renderNewPasswordScreen(res.error.message); return; }
+  passwordRecoveryPending = false;
+  var res2 = await sb.auth.getSession();
+  if (res2.data && res2.data.session){ authMode = "signin"; bootApp(res2.data.session.user); }
+  else { authMode = "signin"; renderAuthScreen(null, "Password updated. Sign in with your new password."); }
+}
 async function signOutUser(){
   await sb.auth.signOut();
 }
 
 /* ---------- constants ---------- */
-var STORAGE_KEY = "meridian:vault:v1";
+var STORAGE_KEY_PREFIX = "meridian:vault:v1:";
+var VAULT_TABLE = "meridian_vaults";
+/* local cache is namespaced per signed-in user so a shared browser never shows
+   one account's notes to another account before the remote fetch resolves */
+function localCacheKey(userId){ return STORAGE_KEY_PREFIX + String(userId||"anon"); }
 var BUILTIN_PLATFORMS = [
   { id:"p_chatgpt", name:"ChatGPT", color:"var(--mint)",       soft:"var(--mint-soft)",       builtin:true },
   { id:"p_claude",  name:"Claude",  color:"var(--coral)",      soft:"var(--coral-soft)",      builtin:true },
@@ -580,13 +686,68 @@ function notesFor(sessionId){
 }
 function monogram(name){ return esc(String(name||"?").trim().slice(0,2).toUpperCase()); }
 
-/* ---------- persistence ---------- */
+/* ---------- persistence ----------
+   Local cache (fast, offline-safe, per-user-namespaced) + Supabase (source of
+   truth, cross-device sync). Every mutation funnels through this one function. */
 async function persist(){
   renderAll();
-  var ok = await storageSet(STORAGE_KEY, JSON.stringify(vault));
-  saveError = ok ? null : "Couldn't save — your browser may be blocking storage (private mode, or storage full). Export a backup to be safe.";
+  var ok = await storageSet(localCacheKey(currentUser ? currentUser.id : null), JSON.stringify(vault));
+  saveError = ok ? null : "Couldn't save locally — your browser may be blocking storage (private mode, or storage full). Export a backup to be safe.";
+  scheduleRemoteSave();
   renderBanner();
 }
+
+/* ---------- remote sync (Supabase) ---------- */
+var currentUser = null;
+var syncStatus = null; /* null | 'saving' | 'offline' */
+var remoteSaveTimer = null;
+var remoteSavePending = false;
+
+async function remoteLoadVault(userId){
+  try {
+    var res = await sb.from(VAULT_TABLE).select("data").eq("user_id", userId).maybeSingle();
+    if (res.error) return { state:"error", data:null };
+    if (res.data) return { state:"found", data:res.data.data };
+    return { state:"empty", data:null };
+  } catch(e){ return { state:"error", data:null }; }
+}
+function scheduleRemoteSave(){
+  if (!currentUser) return;
+  remoteSavePending = true;
+  window.clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = window.setTimeout(flushRemoteSave, 600);
+}
+async function flushRemoteSave(){
+  if (!currentUser || !remoteSavePending) return;
+  remoteSavePending = false;
+  syncStatus = "saving";
+  try {
+    var res = await sb.from(VAULT_TABLE).upsert(
+      { user_id: currentUser.id, data: vault, updated_at: new Date().toISOString() },
+      { onConflict:"user_id" }
+    );
+    if (res.error){
+      console.warn("Meridian: remote save failed —", res.error.message);
+      syncStatus = "offline";
+      /* retry shortly rather than silently losing the write */
+      remoteSavePending = true;
+      window.clearTimeout(remoteSaveTimer);
+      remoteSaveTimer = window.setTimeout(flushRemoteSave, 8000);
+    } else {
+      syncStatus = null;
+    }
+  } catch(e){
+    syncStatus = "offline";
+    remoteSavePending = true;
+    window.clearTimeout(remoteSaveTimer);
+    remoteSaveTimer = window.setTimeout(flushRemoteSave, 8000);
+  }
+  renderBanner();
+}
+/* best-effort flush if the tab is closing with unsaved changes pending */
+window.addEventListener("visibilitychange", function(){
+  if (document.visibilityState === "hidden" && remoteSavePending) flushRemoteSave();
+});
 function touchSession(id){
   var s = sessionById(id);
   if (s) s.updatedAt = new Date().toISOString();
@@ -732,6 +893,12 @@ function deletePlatform(id){
 }
 
 /* ---------- forms: account ---------- */
+function applyAccountStatus(a, statusId){
+  var validIds = STATUS_OPTS.map(function(o){ return o.id; });
+  if (validIds.indexOf(statusId) === -1 || a.status === statusId) return;
+  a.status = statusId;
+  logHistory("status_changed", "Set \u201c"+a.name+"\u201d to "+statusInfo(statusId).label, a.platformId);
+}
 function openAccountForm(platformId, existing){
   var isEdit = !!existing;
   var body = el("div", { class:"sheet-body" });
@@ -740,6 +907,22 @@ function openAccountForm(platformId, existing){
   nameField.appendChild(nameInput);
   body.appendChild(nameField);
   if (isEdit) body.appendChild(el("div", { class:"form-meta", text:"Created "+fullDateTime(existing.createdAt) }));
+
+  var statusField = el("div", { class:"field" }, [ el("label", { text:"Status" }) ]);
+  var statusRow = el("div", { class:"status-picker" });
+  var chosenStatus = existing ? existing.status : "active";
+  STATUS_OPTS.forEach(function(opt){
+    var pill = el("button", { type:"button", class:"status-pick"+(chosenStatus===opt.id?" active":""), style:"background:"+opt.soft+";color:"+opt.color+";" });
+    pill.innerHTML = '<span class="status-dot" style="background:'+opt.color+'"></span>'+esc(opt.label);
+    pill.addEventListener("click", function(){
+      chosenStatus = opt.id;
+      Array.prototype.forEach.call(statusRow.children, function(el2, idx){ el2.classList.toggle("active", STATUS_OPTS[idx].id===opt.id); });
+    });
+    statusRow.appendChild(pill);
+  });
+  statusField.appendChild(statusRow);
+  body.appendChild(statusField);
+
   var errorLine = el("div", { class:"form-error" });
   body.appendChild(errorLine);
 
@@ -751,11 +934,13 @@ function openAccountForm(platformId, existing){
       if (!name){ errorLine.textContent = "Give the account a name."; return; }
       if (isEdit){
         existing.name = name.slice(0,60);
+        applyAccountStatus(existing, chosenStatus);
         persist();
       } else {
         var a = sanitizeAccount({ id:uid("a"), platformId:platformId, name:name, createdAt:new Date().toISOString() });
+        a.status = chosenStatus;
         vault.accounts.push(a);
-        logHistory("account_added", "Added account \u201c"+name+"\u201d", platformId);
+        logHistory("account_added", "Added account \u201c"+name+"\u201d"+(chosenStatus!=="active" ? " ("+statusInfo(chosenStatus).label+")" : ""), platformId);
         selectAccount(a.id);
       }
       close();
@@ -767,11 +952,7 @@ function openAccountForm(platformId, existing){
 function setAccountStatus(id, statusId){
   var a = accountById(id);
   if (!a) return;
-  var validIds = STATUS_OPTS.map(function(o){ return o.id; });
-  if (validIds.indexOf(statusId) === -1) return;
-  if (a.status === statusId) return;
-  a.status = statusId;
-  logHistory("status_changed", "Set \u201c"+a.name+"\u201d to "+statusInfo(statusId).label, a.platformId);
+  applyAccountStatus(a, statusId);
   persist();
   closeSheet();
 }
@@ -948,7 +1129,13 @@ function dismissCoach(){
 function renderBanner(){
   var host = document.getElementById("banner-host");
   if (!host) return;
-  host.innerHTML = saveError ? '<div class="banner error" style="margin-bottom:14px;padding:11px 14px;border-radius:16px;font-size:14px;display:flex;align-items:center;gap:8px;background:var(--rose-soft);color:var(--rose)">'+svgIcon("alert",15,"var(--rose)")+'<span>'+esc(saveError)+'</span></div>' : "";
+  if (saveError){
+    host.innerHTML = '<div class="banner error" style="margin-bottom:14px;padding:11px 14px;border-radius:16px;font-size:14px;display:flex;align-items:center;gap:8px;background:var(--rose-soft);color:var(--rose)">'+svgIcon("alert",15,"var(--rose)")+'<span>'+esc(saveError)+'</span></div>';
+  } else if (syncStatus === "offline"){
+    host.innerHTML = '<div class="banner offline" style="margin-bottom:14px;padding:11px 14px;border-radius:16px;font-size:14px;display:flex;align-items:center;gap:8px;background:var(--coral-soft);color:#a5502f">'+svgIcon("alert",15,"#a5502f")+'<span>Saved on this device — couldn\u2019t reach the server to sync yet. Retrying automatically.</span></div>';
+  } else {
+    host.innerHTML = "";
+  }
 }
 
 /* ---------- render: coach ---------- */
@@ -1347,7 +1534,7 @@ function openSettings(){
   var section1 = el("div");
   section1.innerHTML =
     '<div class="settings-section-label">Account</div>' +
-    '<div class="settings-row"><div><div id="settings-account-email">Signed in</div><div class="desc">Your session data still lives only on this device</div></div><button type="button" class="settings-btn" id="settings-signout">Sign out</button></div>' +
+    '<div class="settings-row"><div><div id="settings-account-email">Signed in</div><div class="desc">Synced to your account — available on any device you sign in on</div></div><button type="button" class="settings-btn" id="settings-signout">Sign out</button></div>' +
     '<div class="settings-section-label">Backup</div>' +
     '<div class="settings-row"><div><div>Export a backup</div><div class="desc">Save everything as a JSON file</div></div><button type="button" class="settings-btn" id="settings-export">Export</button></div>' +
     '<div class="settings-row"><div><div>Import a backup</div><div class="desc">Replaces everything currently stored</div></div><button type="button" class="settings-btn" id="settings-import">Import</button></div>' +
@@ -1460,42 +1647,94 @@ function buildShell(){
 
 /* ---------- boot ---------- */
 var appBooted = false;
-async function bootApp(){
+async function bootApp(user){
   if (appBooted) return;
   appBooted = true;
+  currentUser = user;
   authHost.innerHTML = "";
   app.style.display = "";
   fabBtn.style.display = "";
   buildShell();
-  var raw = await storageGet(STORAGE_KEY);
-  var parsed = null;
-  if (raw){ try { parsed = JSON.parse(raw); } catch(e){ console.warn("Meridian: stored data was corrupted — starting fresh instead of crashing."); } }
-  vault = sanitizeVault(parsed);
+
+  var cacheKey = localCacheKey(user.id);
+  var raw = await storageGet(cacheKey);
+  var localParsed = null;
+  if (raw){ try { localParsed = JSON.parse(raw); } catch(e){ console.warn("Meridian: local cache was corrupted — ignoring it."); } }
+
+  var remote = await remoteLoadVault(user.id);
+  if (remote.state === "found"){
+    /* remote is the source of truth once it's confirmed reachable */
+    vault = sanitizeVault(remote.data);
+    syncStatus = null;
+    storageSet(cacheKey, JSON.stringify(vault)); /* refresh local cache to match */
+  } else if (remote.state === "empty"){
+    /* confirmed no remote row yet — safe to push up whatever's local (first sync, or brand new) */
+    vault = localParsed ? sanitizeVault(localParsed) : emptyVault();
+    syncStatus = null;
+    scheduleRemoteSave();
+  } else {
+    /* remote unreachable — never assume it's empty. Fall back to local cache
+       read-only-ish until we can confirm; don't push anything up yet. */
+    vault = localParsed ? sanitizeVault(localParsed) : emptyVault();
+    syncStatus = "offline";
+    window.setTimeout(retryInitialSync, 4000);
+  }
   loaded = true;
   renderAll();
+  renderBanner();
   window.setInterval(function(){
     /* keep "time ago" labels fresh without a full re-render churn */
     if (sel.sessionId || sel.accountId) renderColumns();
     renderRecents();
   }, 60000);
 }
+async function retryInitialSync(){
+  if (!currentUser || syncStatus !== "offline") return;
+  var remote = await remoteLoadVault(currentUser.id);
+  if (remote.state === "found"){
+    vault = sanitizeVault(remote.data);
+    syncStatus = null;
+    storageSet(localCacheKey(currentUser.id), JSON.stringify(vault));
+    renderAll();
+  } else if (remote.state === "empty"){
+    syncStatus = null;
+    scheduleRemoteSave();
+    renderBanner();
+  } else {
+    window.setTimeout(retryInitialSync, 8000);
+  }
+}
 function showSignedOut(){
   appBooted = false;
+  currentUser = null;
+  syncStatus = null;
+  vault = emptyVault();
   app.style.display = "none";
   app.innerHTML = "";
   fabBtn.style.display = "none";
   authMode = "signin";
+  authEmailOpen = false;
   renderAuthScreen();
 }
 
 async function initAuth(){
   renderAuthLoading();
   var res = await sb.auth.getSession();
-  if (res.data && res.data.session){ bootApp(); }
+  if (res.data && res.data.session){ bootApp(res.data.session.user); }
   else { renderAuthScreen(); }
 
   sb.auth.onAuthStateChange(function(event, session){
-    if (session && !appBooted){ bootApp(); }
+    if (event === "PASSWORD_RECOVERY"){
+      /* user landed here via the reset-password email link */
+      appBooted = false;
+      app.style.display = "none";
+      app.innerHTML = "";
+      fabBtn.style.display = "none";
+      authMode = "newpassword";
+      renderAuthScreen();
+      return;
+    }
+    if (session && !appBooted){ bootApp(session.user); }
     else if (!session && appBooted){ showSignedOut(); }
   });
 }
