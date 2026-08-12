@@ -184,13 +184,15 @@
   .auth-wrap p.sub{ font-size:13.5px; color:var(--ink-faint); margin:0 0 26px; line-height:1.5; }
   .auth-field{ margin-bottom:12px; }
   .auth-field label{ display:block; font-size:12px; font-weight:700; color:var(--ink-dim); margin-bottom:6px; }
-  .auth-field input{ width:100%; padding:13px 14px; border-radius:14px; background:var(--card); box-shadow:inset 0 0 0 1.5px var(--line); font-size:14px; color:var(--ink); }
-  .auth-field input:focus{ box-shadow:inset 0 0 0 1.5px var(--lavender); outline:none; }
+  .auth-field input{ width:100%; padding:13px 14px; border-radius:14px; background:var(--card); border:1.5px solid var(--line); box-shadow:none; -webkit-appearance:none; appearance:none; font-size:14px; color:var(--ink); }
+  .auth-field input:focus{ border-color:var(--lavender); box-shadow:none; outline:none; }
   .auth-submit{ width:100%; padding:14px; border-radius:16px; background:var(--lavender); color:#fff; font-weight:700; font-size:14.5px; margin-top:6px; }
   .auth-submit:active{ transform:scale(.98); }
   .auth-submit:disabled{ opacity:.55; }
-  .auth-google{ width:100%; padding:13px; border-radius:16px; background:var(--card); box-shadow:inset 0 0 0 1.5px var(--line); font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px; }
+  .auth-google{ width:100%; padding:13px; border-radius:16px; background:var(--card); border:1.5px solid var(--line); box-shadow:none; font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:16px; }
   .auth-google:active{ transform:scale(.98); }
+  .auth-email-toggle{ width:100%; text-align:center; padding:11px; font-size:13px; font-weight:700; color:var(--ink-dim); margin-bottom:6px; }
+  .auth-email-toggle:active{ opacity:.7; }
   .auth-divider{ display:flex; align-items:center; gap:10px; color:var(--ink-faint); font-size:11.5px; font-weight:700; text-transform:uppercase; margin-bottom:16px; }
   .auth-divider::before, .auth-divider::after{ content:""; flex:1; height:1px; background:var(--line); }
   .auth-switch{ text-align:center; font-size:13px; color:var(--ink-faint); margin-top:20px; }
@@ -203,7 +205,7 @@
 <body>
 <div id="auth-host"></div>
 <div id="app" class="wrap" role="main" style="display:none;"></div>
-<button id="fab" class="fab" aria-label="Quick add note" type="button"></button>
+<button id="fab" class="fab" aria-label="Quick add note" type="button" style="display:none;"></button>
 <input id="import-input" type="file" accept="application/json,.json" />
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -224,6 +226,7 @@ var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 var authHost = document.getElementById("auth-host");
 var authMode = "signin"; /* 'signin' | 'signup' */
+var authEmailOpen = false;
 
 function authGoogleIcon(){
   return '<svg width="17" height="17" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.87 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.98A9 9 0 0 0 0 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .98 4.97l2.97 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>';
@@ -236,7 +239,7 @@ function renderAuthScreen(errorMsg, noticeMsg){
   var mark = el("div", { class:"auth-mark" }); mark.innerHTML = svgIcon("sparkle", 22, "#fff");
   wrap.appendChild(mark);
   wrap.appendChild(el("h1", { class:"display", text: isSignup ? "Create your account" : "Welcome back" }));
-  wrap.appendChild(el("p", { class:"sub", text: isSignup ? "Set up Meridian to sync your sessions across devices." : "Sign in to your Meridian account." }));
+  wrap.appendChild(el("p", { class:"sub", text: isSignup ? "Create an account to get started." : "Sign in to your Meridian account." }));
   if (errorMsg) wrap.appendChild(el("div", { class:"auth-error", text: errorMsg }));
   if (noticeMsg) wrap.appendChild(el("div", { class:"auth-notice", text: noticeMsg }));
 
@@ -244,32 +247,39 @@ function renderAuthScreen(errorMsg, noticeMsg){
   googleBtn.innerHTML = authGoogleIcon() + '<span>Continue with Google</span>';
   googleBtn.addEventListener("click", signInWithGoogle);
   wrap.appendChild(googleBtn);
-  wrap.appendChild(el("div", { class:"auth-divider", text:"or" }));
 
-  var form = el("form", {});
-  var emailField = el("div", { class:"auth-field" }, [
-    el("label", { text:"Email" }),
-    el("input", { type:"email", id:"auth-email", autocomplete:"email", required:"required" })
-  ]);
-  var pwField = el("div", { class:"auth-field" }, [
-    el("label", { text:"Password" }),
-    el("input", { type:"password", id:"auth-password", autocomplete: isSignup ? "new-password" : "current-password", required:"required", minlength:"6" })
-  ]);
-  form.appendChild(emailField);
-  form.appendChild(pwField);
-  var submitBtn = el("button", { class:"auth-submit", type:"submit", text: isSignup ? "Sign up" : "Sign in" });
-  form.appendChild(submitBtn);
-  form.addEventListener("submit", function(e){
-    e.preventDefault();
-    var email = document.getElementById("auth-email").value.trim();
-    var pw = document.getElementById("auth-password").value;
-    if (isSignup) signUpEmail(email, pw); else signInEmail(email, pw);
-  });
-  wrap.appendChild(form);
+  if (!authEmailOpen){
+    var toggleBtn = el("button", { class:"auth-email-toggle", type:"button", text: isSignup ? "Sign up with email instead" : "Sign in with email instead" });
+    toggleBtn.addEventListener("click", function(){ authEmailOpen = true; renderAuthScreen(); });
+    wrap.appendChild(toggleBtn);
+  } else {
+    wrap.appendChild(el("div", { class:"auth-divider", text:"or" }));
+
+    var form = el("form", {});
+    var emailField = el("div", { class:"auth-field" }, [
+      el("label", { text:"Email" }),
+      el("input", { type:"email", id:"auth-email", autocomplete:"email", required:"required" })
+    ]);
+    var pwField = el("div", { class:"auth-field" }, [
+      el("label", { text:"Password" }),
+      el("input", { type:"password", id:"auth-password", autocomplete: isSignup ? "new-password" : "current-password", required:"required", minlength:"6" })
+    ]);
+    form.appendChild(emailField);
+    form.appendChild(pwField);
+    var submitBtn = el("button", { class:"auth-submit", type:"submit", text: isSignup ? "Sign up" : "Sign in" });
+    form.appendChild(submitBtn);
+    form.addEventListener("submit", function(e){
+      e.preventDefault();
+      var email = document.getElementById("auth-email").value.trim();
+      var pw = document.getElementById("auth-password").value;
+      if (isSignup) signUpEmail(email, pw); else signInEmail(email, pw);
+    });
+    wrap.appendChild(form);
+  }
 
   var switchRow = el("div", { class:"auth-switch" });
   var switchBtn = el("button", { type:"button", text: isSignup ? "Sign in instead" : "Create an account" });
-  switchBtn.addEventListener("click", function(){ authMode = isSignup ? "signin" : "signup"; renderAuthScreen(); });
+  switchBtn.addEventListener("click", function(){ authMode = isSignup ? "signin" : "signup"; authEmailOpen = false; renderAuthScreen(); });
   switchRow.appendChild(document.createTextNode(isSignup ? "Already have an account? " : "New here? "));
   switchRow.appendChild(switchBtn);
   wrap.appendChild(switchRow);
@@ -1164,7 +1174,7 @@ function openSettings(){
   var section1 = el("div");
   section1.innerHTML =
     '<div class="settings-section-label">Account</div>' +
-    '<div class="settings-row"><div><div id="settings-account-email">Signed in</div><div class="desc">This device syncs to your Meridian account</div></div><button type="button" class="settings-btn" id="settings-signout">Sign out</button></div>' +
+    '<div class="settings-row"><div><div id="settings-account-email">Signed in</div><div class="desc">Your session data still lives only on this device</div></div><button type="button" class="settings-btn" id="settings-signout">Sign out</button></div>' +
     '<div class="settings-section-label">Backup</div>' +
     '<div class="settings-row"><div><div>Export a backup</div><div class="desc">Save everything as a JSON file</div></div><button type="button" class="settings-btn" id="settings-export">Export</button></div>' +
     '<div class="settings-row"><div><div>Import a backup</div><div class="desc">Replaces everything currently stored</div></div><button type="button" class="settings-btn" id="settings-import">Import</button></div>' +
@@ -1279,6 +1289,7 @@ async function bootApp(){
   appBooted = true;
   authHost.innerHTML = "";
   app.style.display = "";
+  fabBtn.style.display = "";
   buildShell();
   var raw = await storageGet(STORAGE_KEY);
   var parsed = null;
@@ -1296,6 +1307,7 @@ function showSignedOut(){
   appBooted = false;
   app.style.display = "none";
   app.innerHTML = "";
+  fabBtn.style.display = "none";
   authMode = "signin";
   renderAuthScreen();
 }
