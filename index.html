@@ -92,17 +92,19 @@
   .tile-avatar{ width:34px; height:34px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; color:#fff; flex-shrink:0; letter-spacing:-.02em; }
   .tile-body{ min-width:0; flex:1; }
   .tile-name{ font-size:14px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .tile-sub{ font-size:11.5px; color:var(--ink-faint); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tile-sub{ font-size:11.5px; color:var(--ink-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tile-meta-row{ display:flex; align-items:center; gap:7px; margin-top:5px; min-width:0; }
   .tile-chev{ flex-shrink:0; opacity:.35; }
   .tile-menu{ flex-shrink:0; width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; opacity:.5; }
   .tile-menu:active{ opacity:1; transform:scale(.92); }
-  .tile-status{ flex-shrink:0; width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; }
-  .tile-status:active{ transform:scale(.9); }
-  .status-dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 2px var(--bg2); }
+  .status-pill{ flex-shrink:0; display:inline-flex; align-items:center; gap:5px; padding:4px 9px 4px 7px; border-radius:20px; font-size:10.5px; font-weight:800; white-space:nowrap; }
+  .status-pill:active{ transform:scale(.95); }
+  .status-dot{ width:7px; height:7px; border-radius:50%; flex-shrink:0; }
   .status-option{ width:100%; display:flex; align-items:center; gap:11px; padding:13px 4px; border-bottom:1px solid var(--line); font-size:14px; font-weight:600; text-align:left; }
   .status-option:last-child{ border-bottom:none; }
   .status-option.active{ color:var(--lavender-deep); font-weight:800; }
   .status-option svg{ margin-left:auto; }
+  .status-option .status-dot{ width:10px; height:10px; }
   .tile-add{ background:transparent; box-shadow:inset 0 0 0 1.6px var(--line); color:var(--ink-dim); justify-content:center; font-weight:700; font-size:13px; padding:12px; }
   .tile-add:active{ background:var(--card); }
 
@@ -147,6 +149,7 @@
   .swatch:active{ transform:scale(.92); }
   .swatch.active{ box-shadow:0 0 0 3px var(--bg2), 0 0 0 5px var(--ink); }
   .form-error{ font-size:12.5px; color:var(--rose); font-weight:600; }
+  .form-meta{ font-size:11.5px; color:var(--ink-faint); margin:-6px 0 12px; }
   .sheet-actions{ display:flex; gap:12px; padding:8px 20px 26px; }
   .btn-block{ flex:1; padding:14px; border-radius:18px; font-weight:800; text-align:center; }
   .btn-cancel{ background:var(--card); color:var(--ink-dim); }
@@ -345,10 +348,10 @@ var CUSTOM_PALETTE = [
 var RECENTS_CAP = 8;
 var HISTORY_CAP = 3000;
 var STATUS_OPTS = [
-  { id:"active",      label:"Active",        color:"var(--mint)" },
-  { id:"limit",       label:"Limit reached", color:"var(--coral)" },
-  { id:"cooldown",    label:"Cooldown",      color:"var(--periwinkle)" },
-  { id:"unavailable", label:"Unavailable",   color:"var(--rose)" }
+  { id:"active",      label:"Active",        color:"var(--mint)",       soft:"var(--mint-soft)" },
+  { id:"limit",       label:"Limit reached", color:"var(--coral)",      soft:"var(--coral-soft)" },
+  { id:"cooldown",    label:"Cooldown",      color:"var(--periwinkle)", soft:"var(--periwinkle-soft)" },
+  { id:"unavailable", label:"Unavailable",   color:"var(--rose)",       soft:"var(--rose-soft)" }
 ];
 function statusInfo(id){ return STATUS_OPTS.find(function(o){ return o.id===id; }) || STATUS_OPTS[0]; }
 
@@ -450,6 +453,17 @@ function timeAgo(iso){
   var dd = Math.floor(h/24); if (dd < 7) return dd+"d ago";
   var w = Math.floor(dd/7); if (w < 5) return w+"w ago";
   return d.toLocaleDateString(undefined,{ month:"short", day:"numeric" });
+}
+function shortDate(iso){
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  var sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, sameYear ? { month:"short", day:"numeric" } : { month:"short", day:"numeric", year:"numeric" });
+}
+function fullDateTime(iso){
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined,{ month:"short", day:"numeric", year:"numeric" }) + " at " + d.toLocaleTimeString(undefined,{ hour:"numeric", minute:"2-digit" });
 }
 
 /* ---------- vault sanitizing (defends against corrupted/edited storage) ---------- */
@@ -725,6 +739,7 @@ function openAccountForm(platformId, existing){
   var nameInput = el("input", { type:"text", maxlength:"60", placeholder:"e.g. Work, Personal, jane@company.com", value: existing ? existing.name : "" });
   nameField.appendChild(nameInput);
   body.appendChild(nameField);
+  if (isEdit) body.appendChild(el("div", { class:"form-meta", text:"Created "+fullDateTime(existing.createdAt) }));
   var errorLine = el("div", { class:"form-error" });
   body.appendChild(errorLine);
 
@@ -796,6 +811,7 @@ function openSessionForm(accountId, existing){
   var nameInput = el("input", { type:"text", maxlength:"60", placeholder:"e.g. Q3 planning, Meridian rebuild", value: existing ? existing.name : "" });
   nameField.appendChild(nameInput);
   body.appendChild(nameField);
+  if (isEdit) body.appendChild(el("div", { class:"form-meta", text:"Created "+fullDateTime(existing.createdAt)+" · Last updated "+fullDateTime(existing.updatedAt) }));
   var errorLine = el("div", { class:"form-error" });
   body.appendChild(errorLine);
 
@@ -984,14 +1000,18 @@ function renderCrumbs(){
 /* ---------- render: columns ---------- */
 function tileHTML(opts){
   /* opts: id, avatarText, avatarColor, name, sub, selected, selectAttr, canEdit, canDelete, statusId */
+  var statusPill = opts.statusId ? (
+    '<button type="button" class="status-pill" data-status-menu="'+esc(opts.id)+'" style="background:'+statusInfo(opts.statusId).soft+';color:'+statusInfo(opts.statusId).color+';">' +
+      '<span class="status-dot" style="background:'+statusInfo(opts.statusId).color+'"></span>' + esc(statusInfo(opts.statusId).label) +
+    '</button>'
+  ) : "";
   return (
     '<div class="tile'+(opts.selected?" selected":"")+'" data-select="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'">' +
       '<div class="tile-avatar" style="background:'+opts.avatarColor+'">'+esc(opts.avatarText)+'</div>' +
       '<div class="tile-body">' +
         '<div class="tile-name">'+esc(opts.name)+'</div>' +
-        (opts.sub ? '<div class="tile-sub">'+esc(opts.sub)+'</div>' : "") +
+        (statusPill || opts.sub ? '<div class="tile-meta-row">'+statusPill+(opts.sub ? '<span class="tile-sub">'+esc(opts.sub)+'</span>' : "")+'</div>' : "") +
       '</div>' +
-      (opts.statusId ? '<button type="button" class="tile-status" data-status-menu="'+esc(opts.id)+'" aria-label="Status: '+esc(statusInfo(opts.statusId).label)+'" title="'+esc(statusInfo(opts.statusId).label)+'"><span class="status-dot" style="background:'+statusInfo(opts.statusId).color+'"></span></button>' : "") +
       (opts.canEdit ? '<button type="button" class="tile-menu" data-edit="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'" aria-label="Edit">'+svgIcon("pencil",13,"var(--ink-faint)")+'</button>' : "") +
       (opts.canDelete ? '<button type="button" class="tile-menu" data-delete="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'" aria-label="Delete">'+svgIcon("trash",13,"var(--ink-faint)")+'</button>' : "") +
       (!opts.canEdit && !opts.canDelete ? '<span class="tile-chev">'+svgIcon("chevron",15,"var(--ink-faint)")+'</span>' : "") +
@@ -1004,7 +1024,7 @@ function renderPlatformColumn(){
     var accCount = accountsFor(p.id).length;
     return tileHTML({
       id:p.id, avatarText:monogram(p.name), avatarColor:p.color, name:p.name,
-      sub: accCount===0 ? "No accounts yet" : (accCount+" account"+(accCount===1?"":"s")),
+      sub: (accCount===0 ? "No accounts yet" : (accCount+" account"+(accCount===1?"":"s"))) + " · Added "+shortDate(p.createdAt),
       selected: sel.platformId===p.id, selectAttr:"platform",
       canDelete: !p.builtin
     });
@@ -1027,7 +1047,7 @@ function renderAccountColumn(){
     var sessCount = sessionsFor(a.id).length;
     return tileHTML({
       id:a.id, avatarText:monogram(a.name), avatarColor:p.color, name:a.name,
-      sub: sessCount===0 ? "No sessions yet" : (sessCount+" session"+(sessCount===1?"":"s")),
+      sub: (sessCount===0 ? "No sessions yet" : (sessCount+" session"+(sessCount===1?"":"s"))) + " · Added "+shortDate(a.createdAt),
       selected: sel.accountId===a.id, selectAttr:"account", canEdit:true, canDelete:true, statusId:a.status
     });
   }).join("");
@@ -1051,7 +1071,7 @@ function renderSessionColumn(){
     var noteCount = notesFor(s.id).length;
     return tileHTML({
       id:s.id, avatarText:monogram(s.name), avatarColor: p ? p.color : "var(--ink-faint)", name:s.name,
-      sub: (noteCount===0 ? "No notes yet" : (noteCount+" note"+(noteCount===1?"":"s"))) + " · " + timeAgo(s.updatedAt),
+      sub: (noteCount===0 ? "No notes yet" : (noteCount+" note"+(noteCount===1?"":"s"))) + " · Added "+shortDate(s.createdAt),
       selected: sel.sessionId===s.id, selectAttr:"session", canEdit:true, canDelete:true
     });
   }).join("");
