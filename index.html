@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="description" content="Meridian — a private, local home for everything you keep across your Claude, ChatGPT, and Gemini sessions." />
+<meta name="description" content="Meridian — never re-explain your context to Claude, ChatGPT, or Gemini again. Keep what matters, hand it off in one tap." />
 <meta name="theme-color" content="#8C7EE0" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -11,7 +11,7 @@
 <meta name="robots" content="noindex" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self' https://tjdrafrolobgkqrxitwq.supabase.co wss://tjdrafrolobgkqrxitwq.supabase.co; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none';" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238C7EE0'/%3E%3Cstop offset='1' stop-color='%237C97E8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='2.5'/%3E%3C/svg%3E" />
-<title>Meridian — your session home</title>
+<title>Meridian — never re-explain yourself again</title>
 <style>
   :root{
     --bg1:#F3EFFB; --bg2:#FBF8FF; --card:#FFFFFF;
@@ -118,6 +118,9 @@
   .note-add-btn:active{ transform:scale(.98); }
   .copyall-btn{ width:44px; flex-shrink:0; border-radius:16px; background:var(--card); box-shadow:inset 0 0 0 1.5px var(--line); display:flex; align-items:center; justify-content:center; }
   .copyall-btn.copied{ background:var(--mint-soft); box-shadow:none; }
+  .handoff-btn{ flex-shrink:0; display:flex; align-items:center; justify-content:center; gap:7px; padding:12px 15px; border-radius:16px; background:var(--lavender-soft); color:var(--lavender-deep); font-weight:800; font-size:13.5px; white-space:nowrap; }
+  .handoff-btn:active{ transform:scale(.98); }
+  .handoff-btn.copied{ background:var(--mint-soft); color:#2f8a72; }
   .note-card{ background:var(--card); border-radius:20px; padding:14px 15px; box-shadow:0 1px 4px rgba(140,126,224,.05),0 6px 16px rgba(140,126,224,.06); }
   .note-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:5px; }
   .note-title-row{ display:flex; align-items:center; gap:6px; min-width:0; }
@@ -893,12 +896,6 @@ function deletePlatform(id){
 }
 
 /* ---------- forms: account ---------- */
-function applyAccountStatus(a, statusId){
-  var validIds = STATUS_OPTS.map(function(o){ return o.id; });
-  if (validIds.indexOf(statusId) === -1 || a.status === statusId) return;
-  a.status = statusId;
-  logHistory("status_changed", "Set \u201c"+a.name+"\u201d to "+statusInfo(statusId).label, a.platformId);
-}
 function openAccountForm(platformId, existing){
   var isEdit = !!existing;
   var body = el("div", { class:"sheet-body" });
@@ -907,21 +904,6 @@ function openAccountForm(platformId, existing){
   nameField.appendChild(nameInput);
   body.appendChild(nameField);
   if (isEdit) body.appendChild(el("div", { class:"form-meta", text:"Created "+fullDateTime(existing.createdAt) }));
-
-  var statusField = el("div", { class:"field" }, [ el("label", { text:"Status" }) ]);
-  var statusRow = el("div", { class:"status-picker" });
-  var chosenStatus = existing ? existing.status : "active";
-  STATUS_OPTS.forEach(function(opt){
-    var pill = el("button", { type:"button", class:"status-pick"+(chosenStatus===opt.id?" active":""), style:"background:"+opt.soft+";color:"+opt.color+";" });
-    pill.innerHTML = '<span class="status-dot" style="background:'+opt.color+'"></span>'+esc(opt.label);
-    pill.addEventListener("click", function(){
-      chosenStatus = opt.id;
-      Array.prototype.forEach.call(statusRow.children, function(el2, idx){ el2.classList.toggle("active", STATUS_OPTS[idx].id===opt.id); });
-    });
-    statusRow.appendChild(pill);
-  });
-  statusField.appendChild(statusRow);
-  body.appendChild(statusField);
 
   var errorLine = el("div", { class:"form-error" });
   body.appendChild(errorLine);
@@ -934,13 +916,11 @@ function openAccountForm(platformId, existing){
       if (!name){ errorLine.textContent = "Give the account a name."; return; }
       if (isEdit){
         existing.name = name.slice(0,60);
-        applyAccountStatus(existing, chosenStatus);
         persist();
       } else {
         var a = sanitizeAccount({ id:uid("a"), platformId:platformId, name:name, createdAt:new Date().toISOString() });
-        a.status = chosenStatus;
         vault.accounts.push(a);
-        logHistory("account_added", "Added account \u201c"+name+"\u201d"+(chosenStatus!=="active" ? " ("+statusInfo(chosenStatus).label+")" : ""), platformId);
+        logHistory("account_added", "Added account \u201c"+name+"\u201d", platformId);
         selectAccount(a.id);
       }
       close();
@@ -948,27 +928,6 @@ function openAccountForm(platformId, existing){
     actions.appendChild(saveBtn);
   });
   window.setTimeout(function(){ nameInput.focus(); }, 30);
-}
-function setAccountStatus(id, statusId){
-  var a = accountById(id);
-  if (!a) return;
-  applyAccountStatus(a, statusId);
-  persist();
-  closeSheet();
-}
-function openStatusMenu(accountId){
-  var a = accountById(accountId);
-  if (!a) return;
-  var body = el("div", { class:"sheet-body" });
-  var list = el("div", { class:"col-list" });
-  STATUS_OPTS.forEach(function(opt){
-    var row = el("button", { type:"button", class:"status-option"+(a.status===opt.id?" active":"") });
-    row.innerHTML = '<span class="status-dot" style="background:'+opt.color+'"></span><span>'+esc(opt.label)+'</span>' + (a.status===opt.id ? svgIcon("check",15,"var(--lavender-deep)") : "");
-    row.addEventListener("click", function(){ setAccountStatus(accountId, opt.id); });
-    list.appendChild(row);
-  });
-  body.appendChild(list);
-  openSheet('Status for \u201c'+a.name+'\u201d', body, null);
 }
 function deleteAccount(id){
   var a = accountById(id);
@@ -1116,6 +1075,52 @@ async function copyAllNotes(sessionId, btnEl){
   }
 }
 
+/* ---------- handoff: the headline feature — bundle a session's context so you
+   can pick up exactly where you left off in a new chat after hitting a limit
+   or switching models/platforms ---------- */
+function buildHandoffText(sessionId){
+  var s = sessionById(sessionId);
+  if (!s) return "";
+  var a = accountById(s.accountId);
+  var p = a ? platformById(a.platformId) : null;
+  var notes = notesFor(sessionId);
+  var lines = [];
+  lines.push("# Context handoff — " + s.name);
+  lines.push((p ? p.name : "Unknown platform") + (a ? " · " + a.name : "") + " · exported " + fullDateTime(new Date().toISOString()));
+  lines.push("");
+  lines.push("Paste this into a new " + (p ? p.name : "chat") + " conversation to pick up exactly where you left off.");
+  lines.push("");
+  if (notes.length === 0){
+    lines.push("(No notes saved in this session yet.)");
+  } else {
+    lines.push(notes.map(function(n){
+      return (n.title ? "## " + n.title : "## Note") + "\n" + n.body;
+    }).join("\n\n---\n\n"));
+  }
+  return lines.join("\n");
+}
+async function shareOrCopyHandoff(sessionId, btnEl){
+  var s = sessionById(sessionId);
+  if (!s) return;
+  var text = buildHandoffText(sessionId);
+  if (navigator.share){
+    try {
+      await navigator.share({ title:"Meridian handoff — " + s.name, text: text });
+      return;
+    } catch(e){
+      if (e && e.name === "AbortError") return; /* user closed the share sheet — not an error */
+      /* any other failure: fall through to clipboard */
+    }
+  }
+  var ok = await copyText(text);
+  if (ok){
+    showToast("Handoff copied — paste it into a new chat to continue");
+    if (btnEl){ btnEl.classList.add("copied"); window.setTimeout(function(){ btnEl.classList.remove("copied"); }, 1200); }
+  } else {
+    showToast("Couldn't copy — try selecting the text manually");
+  }
+}
+
 /* ---------- coach hint ---------- */
 function shouldShowCoach(){
   return !vault.coachDismissed && vault.accounts.length === 0;
@@ -1144,7 +1149,7 @@ function renderCoach(){
   if (!host) return;
   if (!shouldShowCoach()){ host.innerHTML = ""; return; }
   host.innerHTML =
-    '<div class="coach"><span>Tap a platform on the left to add your first linked account — then a session, then your notes.</span>' +
+    '<div class="coach"><span>Hit a limit or switching models? Tap a platform to set up your first account — then keep the context you\u2019ll want to hand off next time.</span>' +
     '<button type="button" class="dismiss" id="coach-dismiss" aria-label="Dismiss tip">'+svgIcon("x",14,"var(--lavender-deep)")+'</button></div>';
   var btn = document.getElementById("coach-dismiss");
   if (btn) btn.addEventListener("click", dismissCoach);
@@ -1186,24 +1191,35 @@ function renderCrumbs(){
 
 /* ---------- render: columns ---------- */
 function tileHTML(opts){
-  /* opts: id, avatarText, avatarColor, name, sub, selected, selectAttr, canEdit, canDelete, statusId */
-  var statusPill = opts.statusId ? (
-    '<button type="button" class="status-pill" data-status-menu="'+esc(opts.id)+'" style="background:'+statusInfo(opts.statusId).soft+';color:'+statusInfo(opts.statusId).color+';">' +
-      '<span class="status-dot" style="background:'+statusInfo(opts.statusId).color+'"></span>' + esc(statusInfo(opts.statusId).label) +
-    '</button>'
+  /* opts: id, avatarText, avatarColor, name, sub, selected, selectAttr, canEdit, canDelete, badge:{label,color,soft} */
+  var badgeHTML = opts.badge ? (
+    '<span class="status-pill" style="background:'+opts.badge.soft+';color:'+opts.badge.color+';">' +
+      '<span class="status-dot" style="background:'+opts.badge.color+'"></span>' + esc(opts.badge.label) +
+    '</span>'
   ) : "";
   return (
     '<div class="tile'+(opts.selected?" selected":"")+'" data-select="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'">' +
       '<div class="tile-avatar" style="background:'+opts.avatarColor+'">'+esc(opts.avatarText)+'</div>' +
       '<div class="tile-body">' +
         '<div class="tile-name">'+esc(opts.name)+'</div>' +
-        (statusPill || opts.sub ? '<div class="tile-meta-row">'+statusPill+(opts.sub ? '<span class="tile-sub">'+esc(opts.sub)+'</span>' : "")+'</div>' : "") +
+        (badgeHTML || opts.sub ? '<div class="tile-meta-row">'+badgeHTML+(opts.sub ? '<span class="tile-sub">'+esc(opts.sub)+'</span>' : "")+'</div>' : "") +
       '</div>' +
       (opts.canEdit ? '<button type="button" class="tile-menu" data-edit="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'" aria-label="Edit">'+svgIcon("pencil",13,"var(--ink-faint)")+'</button>' : "") +
       (opts.canDelete ? '<button type="button" class="tile-menu" data-delete="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'" aria-label="Delete">'+svgIcon("trash",13,"var(--ink-faint)")+'</button>' : "") +
       (!opts.canEdit && !opts.canDelete ? '<span class="tile-chev">'+svgIcon("chevron",15,"var(--ink-faint)")+'</span>' : "") +
     '</div>'
   );
+}
+/* real, computed signal — not a manual toggle. Based on when this account's
+   sessions were actually last touched (note added/edited, session opened). */
+function accountFreshness(accountId){
+  var sess = sessionsFor(accountId); /* already sorted newest updatedAt first */
+  if (sess.length === 0) return null;
+  var latest = sess[0].updatedAt;
+  var days = (Date.now() - new Date(latest).getTime()) / 86400000;
+  if (days < 2) return { label:"Active today", color:"var(--mint)", soft:"var(--mint-soft)" };
+  if (days < 14) return { label:"Used "+timeAgo(latest), color:"var(--periwinkle)", soft:"var(--periwinkle-soft)" };
+  return { label:"Stale \u00b7 "+timeAgo(latest), color:"var(--coral)", soft:"var(--coral-soft)" };
 }
 
 function renderPlatformColumn(){
@@ -1235,7 +1251,7 @@ function renderAccountColumn(){
     return tileHTML({
       id:a.id, avatarText:monogram(a.name), avatarColor:p.color, name:a.name,
       sub: (sessCount===0 ? "No sessions yet" : (sessCount+" session"+(sessCount===1?"":"s"))) + " · Added "+shortDate(a.createdAt),
-      selected: sel.accountId===a.id, selectAttr:"account", canEdit:true, canDelete:true, statusId:a.status
+      selected: sel.accountId===a.id, selectAttr:"account", canEdit:true, canDelete:true, badge:accountFreshness(a.id)
     });
   }).join("");
   var empty = list.length===0 ? '<div class="col-empty">No accounts linked to '+esc(p.name)+' yet. Add one to start keeping notes here.</div>' : "";
@@ -1308,7 +1324,7 @@ function renderNotesColumn(){
       '<div class="col-head"><span class="col-title">'+esc(s.name)+' <strong>notes</strong></span><span class="col-count">'+list.length+'</span></div>' +
       '<div class="notes-toolbar">' +
         '<button type="button" class="note-add-btn" id="add-note-btn">'+svgIcon("plus",15,"#fff")+' Add note</button>' +
-        (list.length>1 ? '<button type="button" class="copyall-btn" id="copyall-btn" aria-label="Copy all notes">'+svgIcon("copy",15,"var(--ink-dim)")+'</button>' : "") +
+        '<button type="button" class="handoff-btn" id="handoff-btn" aria-label="Copy handoff for a new chat">'+svgIcon("upload",15,"var(--lavender-deep)")+' Handoff</button>' +
       '</div>' +
       '<div class="col-scroll"><div class="col-list">' + cards + empty + '</div></div>' +
     '</div>'
@@ -1354,7 +1370,6 @@ document.addEventListener("click", function(e){
   var delNoteBtn = t.closest("[data-delete-note]"); if (delNoteBtn){ deleteNote(delNoteBtn.getAttribute("data-delete-note")); return; }
   var expandBtn = t.closest("[data-expand]"); if (expandBtn){ var id = expandBtn.getAttribute("data-expand"); expandedNotes[id] = !expandedNotes[id]; renderColumns(); return; }
 
-  var statusMenuBtn = t.closest("[data-status-menu]"); if (statusMenuBtn){ openStatusMenu(statusMenuBtn.getAttribute("data-status-menu")); return; }
 
   var editBtn = t.closest("[data-edit]");
   if (editBtn){
@@ -1386,6 +1401,7 @@ document.addEventListener("click", function(e){
   if (t.closest("[data-add-session]")) { openSessionForm(sel.accountId, null); return; }
   if (t.closest("#add-note-btn")) { openNoteForm(sel.sessionId, null); return; }
   if (t.closest("#copyall-btn")) { copyAllNotes(sel.sessionId, t.closest("#copyall-btn")); return; }
+  if (t.closest("#handoff-btn")) { shareOrCopyHandoff(sel.sessionId, t.closest("#handoff-btn")); return; }
 
   var recentChip = t.closest("[data-recent-jump]"); if (recentChip){ jumpToSession(recentChip.getAttribute("data-recent-jump")); return; }
 
@@ -1603,7 +1619,7 @@ function buildShell(){
       el("div", { class:"brand-mark" }),
       el("div", {}, [
         el("div", { class:"brand-name display", text:"Meridian" }),
-        el("div", { class:"brand-sub", text:"your session home" })
+        el("div", { class:"brand-sub", text:"pick up where you left off" })
       ])
     ]),
     el("div", { class:"header-actions" }, [
