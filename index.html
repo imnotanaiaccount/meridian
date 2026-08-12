@@ -96,6 +96,13 @@
   .tile-chev{ flex-shrink:0; opacity:.35; }
   .tile-menu{ flex-shrink:0; width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; opacity:.5; }
   .tile-menu:active{ opacity:1; transform:scale(.92); }
+  .tile-status{ flex-shrink:0; width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; }
+  .tile-status:active{ transform:scale(.9); }
+  .status-dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 2px var(--bg2); }
+  .status-option{ width:100%; display:flex; align-items:center; gap:11px; padding:13px 4px; border-bottom:1px solid var(--line); font-size:14px; font-weight:600; text-align:left; }
+  .status-option:last-child{ border-bottom:none; }
+  .status-option.active{ color:var(--lavender-deep); font-weight:800; }
+  .status-option svg{ margin-left:auto; }
   .tile-add{ background:transparent; box-shadow:inset 0 0 0 1.6px var(--line); color:var(--ink-dim); justify-content:center; font-weight:700; font-size:13px; padding:12px; }
   .tile-add:active{ background:var(--card); }
 
@@ -154,6 +161,11 @@
   .search-result:active{ transform:scale(.98); }
   .search-path{ font-size:11px; color:var(--ink-faint); margin-bottom:4px; font-weight:700; }
   .search-snip{ font-size:13.5px; color:var(--ink-dim); line-height:1.4; }
+  .history-row{ display:flex; align-items:flex-start; gap:10px; padding:11px 12px; border-radius:14px; background:var(--card); box-shadow:0 1px 4px rgba(140,126,224,.05); }
+  .history-icon{ flex-shrink:0; width:24px; height:24px; border-radius:8px; background:var(--lavender-soft); display:flex; align-items:center; justify-content:center; margin-top:1px; }
+  .history-body{ min-width:0; }
+  .history-label{ font-size:13.5px; font-weight:700; color:var(--ink); line-height:1.4; }
+  .history-meta{ font-size:11.5px; color:var(--ink-faint); margin-top:2px; }
   mark{ background:var(--lavender-soft); color:var(--lavender-deep); border-radius:3px; padding:0 1px; font-weight:700; }
 
   .settings-row{ display:flex; align-items:center; justify-content:space-between; padding:14px 2px; border-bottom:1px solid var(--line); font-size:14.5px; gap:10px; }
@@ -331,6 +343,14 @@ var CUSTOM_PALETTE = [
   { color:"var(--periwinkle)", soft:"var(--periwinkle-soft)" }
 ];
 var RECENTS_CAP = 8;
+var HISTORY_CAP = 3000;
+var STATUS_OPTS = [
+  { id:"active",      label:"Active",        color:"var(--mint)" },
+  { id:"limit",       label:"Limit reached", color:"var(--coral)" },
+  { id:"cooldown",    label:"Cooldown",      color:"var(--periwinkle)" },
+  { id:"unavailable", label:"Unavailable",   color:"var(--rose)" }
+];
+function statusInfo(id){ return STATUS_OPTS.find(function(o){ return o.id===id; }) || STATUS_OPTS[0]; }
 
 /* ---------- tiny safe DOM/escape helpers ---------- */
 function esc(str){
@@ -446,10 +466,12 @@ function sanitizePlatform(p){
 }
 function sanitizeAccount(a){
   if (!a || typeof a !== "object") return null;
+  var statusIds = STATUS_OPTS.map(function(o){ return o.id; });
   return {
     id: String(a.id||uid("a")).slice(0,64),
     platformId: String(a.platformId||""),
     name: String(a.name||"Untitled account").slice(0,60),
+    status: statusIds.indexOf(a.status) !== -1 ? a.status : "active",
     createdAt: a.createdAt || new Date().toISOString()
   };
 }
@@ -475,9 +497,20 @@ function sanitizeNote(n){
     updatedAt: n.updatedAt || n.createdAt || new Date().toISOString()
   };
 }
+function sanitizeHistoryEntry(h){
+  if (!h || typeof h !== "object") return null;
+  return {
+    id: String(h.id||uid("h")).slice(0,64),
+    ts: h.ts || new Date().toISOString(),
+    type: String(h.type||"").slice(0,40),
+    label: String(h.label||"").slice(0,160),
+    platformId: h.platformId ? String(h.platformId).slice(0,64) : null,
+    platformName: h.platformName ? String(h.platformName).slice(0,40) : null
+  };
+}
 function emptyVault(){
   return { platforms: BUILTIN_PLATFORMS.map(function(p){ return Object.assign({},p,{createdAt:new Date().toISOString()}); }),
-    accounts: [], sessions: [], notes: [], recents: [], coachDismissed: false };
+    accounts: [], sessions: [], notes: [], recents: [], history: [], coachDismissed: false };
 }
 function sanitizeVault(raw){
   var v = emptyVault();
@@ -495,6 +528,7 @@ function sanitizeVault(raw){
   if (Array.isArray(raw.sessions)) v.sessions = raw.sessions.map(sanitizeSession).filter(Boolean);
   if (Array.isArray(raw.notes)) v.notes = raw.notes.map(sanitizeNote).filter(Boolean);
   if (Array.isArray(raw.recents)) v.recents = raw.recents.filter(function(r){ return r && r.sessionId; }).slice(0,RECENTS_CAP);
+  if (Array.isArray(raw.history)) v.history = raw.history.map(sanitizeHistoryEntry).filter(Boolean).slice(0,HISTORY_CAP);
   v.coachDismissed = !!raw.coachDismissed;
   return v;
 }
@@ -547,6 +581,14 @@ function pushRecent(sessionId){
   vault.recents = vault.recents.filter(function(r){ return r.sessionId !== sessionId; });
   vault.recents.unshift({ sessionId:sessionId, ts:new Date().toISOString() });
   vault.recents = vault.recents.slice(0, RECENTS_CAP);
+}
+function logHistory(type, label, platformId){
+  var p = platformId ? platformById(platformId) : null;
+  vault.history.unshift({
+    id: uid("h"), ts: new Date().toISOString(), type: type, label: label,
+    platformId: p ? p.id : null, platformName: p ? p.name : null
+  });
+  if (vault.history.length > HISTORY_CAP) vault.history = vault.history.slice(0, HISTORY_CAP);
 }
 
 /* ---------- toast ---------- */
@@ -651,6 +693,7 @@ function openPlatformForm(){
       if (!name){ errorLine.textContent = "Give the platform a name."; return; }
       var p = sanitizePlatform({ id:uid("p"), name:name, color:chosen.color, soft:chosen.soft, builtin:false, createdAt:new Date().toISOString() });
       vault.platforms.push(p);
+      logHistory("platform_added", "Added platform \u201c"+name+"\u201d", p.id);
       selectPlatform(p.id);
       close();
     });
@@ -697,6 +740,7 @@ function openAccountForm(platformId, existing){
       } else {
         var a = sanitizeAccount({ id:uid("a"), platformId:platformId, name:name, createdAt:new Date().toISOString() });
         vault.accounts.push(a);
+        logHistory("account_added", "Added account \u201c"+name+"\u201d", platformId);
         selectAccount(a.id);
       }
       close();
@@ -704,6 +748,31 @@ function openAccountForm(platformId, existing){
     actions.appendChild(saveBtn);
   });
   window.setTimeout(function(){ nameInput.focus(); }, 30);
+}
+function setAccountStatus(id, statusId){
+  var a = accountById(id);
+  if (!a) return;
+  var validIds = STATUS_OPTS.map(function(o){ return o.id; });
+  if (validIds.indexOf(statusId) === -1) return;
+  if (a.status === statusId) return;
+  a.status = statusId;
+  logHistory("status_changed", "Set \u201c"+a.name+"\u201d to "+statusInfo(statusId).label, a.platformId);
+  persist();
+  closeSheet();
+}
+function openStatusMenu(accountId){
+  var a = accountById(accountId);
+  if (!a) return;
+  var body = el("div", { class:"sheet-body" });
+  var list = el("div", { class:"col-list" });
+  STATUS_OPTS.forEach(function(opt){
+    var row = el("button", { type:"button", class:"status-option"+(a.status===opt.id?" active":"") });
+    row.innerHTML = '<span class="status-dot" style="background:'+opt.color+'"></span><span>'+esc(opt.label)+'</span>' + (a.status===opt.id ? svgIcon("check",15,"var(--lavender-deep)") : "");
+    row.addEventListener("click", function(){ setAccountStatus(accountId, opt.id); });
+    list.appendChild(row);
+  });
+  body.appendChild(list);
+  openSheet('Status for \u201c'+a.name+'\u201d', body, null);
 }
 function deleteAccount(id){
   var a = accountById(id);
@@ -744,6 +813,8 @@ function openSessionForm(accountId, existing){
         var now = new Date().toISOString();
         var s = sanitizeSession({ id:uid("s"), accountId:accountId, name:name, createdAt:now, updatedAt:now });
         vault.sessions.push(s);
+        var accForLog = accountById(accountId);
+        logHistory("session_added", "Added session \u201c"+name+"\u201d", accForLog ? accForLog.platformId : null);
         selectSession(s.id);
       }
       close();
@@ -796,6 +867,9 @@ function openNoteForm(sessionId, existing){
       } else {
         var n = sanitizeNote({ id:uid("n"), sessionId:sessionId, title:titleInput.value.trim(), body:text, pinned:false, createdAt:now, updatedAt:now });
         vault.notes.push(n);
+        var sessForLog = sessionById(sessionId);
+        var accForLog2 = sessForLog ? accountById(sessForLog.accountId) : null;
+        logHistory("note_added", n.title ? "Added note \u201c"+n.title+"\u201d" : "Added a note", accForLog2 ? accForLog2.platformId : null);
       }
       touchSession(sessionId);
       focusColumn = "notes";
@@ -909,7 +983,7 @@ function renderCrumbs(){
 
 /* ---------- render: columns ---------- */
 function tileHTML(opts){
-  /* opts: id, avatarText, avatarColor, name, sub, selected, selectAttr, canEdit, canDelete */
+  /* opts: id, avatarText, avatarColor, name, sub, selected, selectAttr, canEdit, canDelete, statusId */
   return (
     '<div class="tile'+(opts.selected?" selected":"")+'" data-select="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'">' +
       '<div class="tile-avatar" style="background:'+opts.avatarColor+'">'+esc(opts.avatarText)+'</div>' +
@@ -917,6 +991,7 @@ function tileHTML(opts){
         '<div class="tile-name">'+esc(opts.name)+'</div>' +
         (opts.sub ? '<div class="tile-sub">'+esc(opts.sub)+'</div>' : "") +
       '</div>' +
+      (opts.statusId ? '<button type="button" class="tile-status" data-status-menu="'+esc(opts.id)+'" aria-label="Status: '+esc(statusInfo(opts.statusId).label)+'" title="'+esc(statusInfo(opts.statusId).label)+'"><span class="status-dot" style="background:'+statusInfo(opts.statusId).color+'"></span></button>' : "") +
       (opts.canEdit ? '<button type="button" class="tile-menu" data-edit="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'" aria-label="Edit">'+svgIcon("pencil",13,"var(--ink-faint)")+'</button>' : "") +
       (opts.canDelete ? '<button type="button" class="tile-menu" data-delete="'+opts.selectAttr+'" data-id="'+esc(opts.id)+'" aria-label="Delete">'+svgIcon("trash",13,"var(--ink-faint)")+'</button>' : "") +
       (!opts.canEdit && !opts.canDelete ? '<span class="tile-chev">'+svgIcon("chevron",15,"var(--ink-faint)")+'</span>' : "") +
@@ -953,7 +1028,7 @@ function renderAccountColumn(){
     return tileHTML({
       id:a.id, avatarText:monogram(a.name), avatarColor:p.color, name:a.name,
       sub: sessCount===0 ? "No sessions yet" : (sessCount+" session"+(sessCount===1?"":"s")),
-      selected: sel.accountId===a.id, selectAttr:"account", canEdit:true, canDelete:true
+      selected: sel.accountId===a.id, selectAttr:"account", canEdit:true, canDelete:true, statusId:a.status
     });
   }).join("");
   var empty = list.length===0 ? '<div class="col-empty">No accounts linked to '+esc(p.name)+' yet. Add one to start keeping notes here.</div>' : "";
@@ -1072,6 +1147,8 @@ document.addEventListener("click", function(e){
   var delNoteBtn = t.closest("[data-delete-note]"); if (delNoteBtn){ deleteNote(delNoteBtn.getAttribute("data-delete-note")); return; }
   var expandBtn = t.closest("[data-expand]"); if (expandBtn){ var id = expandBtn.getAttribute("data-expand"); expandedNotes[id] = !expandedNotes[id]; renderColumns(); return; }
 
+  var statusMenuBtn = t.closest("[data-status-menu]"); if (statusMenuBtn){ openStatusMenu(statusMenuBtn.getAttribute("data-status-menu")); return; }
+
   var editBtn = t.closest("[data-edit]");
   if (editBtn){
     var kind = editBtn.getAttribute("data-edit"), id2 = editBtn.getAttribute("data-id");
@@ -1168,6 +1245,82 @@ function openSearch(){
   window.setTimeout(function(){ input.focus(); }, 30);
 }
 
+/* ---------- history (journal log) sheet ---------- */
+var historyTypeIcon = {
+  platform_added:"sparkle", account_added:"home", session_added:"pencil", note_added:"copy", status_changed:"alert"
+};
+function openHistory(){
+  var body = el("div", { class:"sheet-body" });
+  var row = el("div", { class:"search-row" });
+  row.innerHTML = svgIcon("search",16,"var(--ink-faint)");
+  var input = el("input", { type:"text", placeholder:"Search history…" });
+  row.appendChild(input);
+  body.appendChild(row);
+
+  var filterRow = el("div", { class:"crumbs", style:"margin:12px 0 4px;" });
+  var activeFilter = "all";
+  var platformsInUse = vault.platforms.filter(function(p){ return vault.history.some(function(h){ return h.platformId===p.id; }); });
+  function renderFilters(){
+    var chips = [ { id:"all", name:"All" } ].concat(platformsInUse);
+    filterRow.innerHTML = chips.map(function(c){
+      return '<button type="button" class="crumb'+(activeFilter===c.id?" active":"")+'" data-hist-filter="'+esc(c.id)+'">'+esc(c.name)+'</button>';
+    }).join("");
+  }
+  renderFilters();
+  body.appendChild(filterRow);
+
+  var resultsHost = el("div", { class:"col-list", style:"margin-top:14px;" });
+  body.appendChild(resultsHost);
+
+  function runHistorySearch(){
+    var q = input.value.trim().toLowerCase();
+    var items = vault.history.filter(function(h){
+      if (activeFilter !== "all" && h.platformId !== activeFilter) return false;
+      if (q && h.label.toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+    if (items.length === 0){
+      resultsHost.innerHTML = '<div class="search-hint">'+(vault.history.length===0 ? "Nothing logged yet — actions you take will show up here." : "No matching history.")+'</div>';
+      return;
+    }
+    resultsHost.innerHTML = items.slice(0,200).map(function(h){
+      var icon = historyTypeIcon[h.type] || "clock";
+      return (
+        '<div class="history-row">' +
+          '<span class="history-icon">'+svgIcon(icon,14,"var(--ink-faint)")+'</span>' +
+          '<div class="history-body">' +
+            '<div class="history-label">'+esc(h.label)+'</div>' +
+            '<div class="history-meta">'+(h.platformName?esc(h.platformName)+" · ":"")+timeAgo(h.ts)+'</div>' +
+          '</div>' +
+        '</div>'
+      );
+    }).join("");
+  }
+  input.addEventListener("input", runHistorySearch);
+  filterRow.addEventListener("click", function(e){
+    var chip = e.target.closest("[data-hist-filter]");
+    if (!chip) return;
+    activeFilter = chip.getAttribute("data-hist-filter");
+    renderFilters();
+    runHistorySearch();
+  });
+  runHistorySearch();
+
+  openSheet("History", body, function(actions, close){
+    actions.appendChild(el("button", { type:"button", class:"btn-block btn-cancel", text:"Close", onclick:close }));
+    var clearBtn = el("button", { type:"button", class:"btn-block btn-save", style:"background:var(--rose-soft);color:var(--rose);", text:"Clear history" });
+    clearBtn.addEventListener("click", function(){
+      if (vault.history.length === 0) return;
+      if (!window.confirm("Clear the history log? This only removes the log — your platforms, accounts, sessions, and notes are untouched.")) return;
+      vault.history = [];
+      persist();
+      close();
+      showToast("History cleared");
+    });
+    actions.appendChild(clearBtn);
+  });
+}
+
 /* ---------- settings sheet (export / import / danger zone) ---------- */
 function openSettings(){
   var body = el("div", { class:"sheet-body" });
@@ -1247,16 +1400,19 @@ function buildShell(){
       ])
     ]),
     el("div", { class:"header-actions" }, [
+      el("button", { class:"icon-btn btn-ghost", type:"button", "aria-label":"History", id:"history-btn" }),
       el("button", { class:"icon-btn btn-ghost", type:"button", "aria-label":"Search", id:"search-btn" }),
       el("button", { class:"icon-btn btn-ghost", type:"button", "aria-label":"Settings", id:"settings-btn" })
     ])
   ]);
   header.querySelector(".brand-mark").innerHTML = svgIcon("sparkle", 18, "#fff");
   var actionBtns = header.querySelectorAll(".header-actions .icon-btn");
-  actionBtns[0].innerHTML = svgIcon("search", 16, "var(--ink-dim)");
-  actionBtns[1].innerHTML = svgIcon("gear", 16, "var(--ink-dim)");
-  actionBtns[0].addEventListener("click", openSearch);
-  actionBtns[1].addEventListener("click", openSettings);
+  actionBtns[0].innerHTML = svgIcon("clock", 16, "var(--ink-dim)");
+  actionBtns[1].innerHTML = svgIcon("search", 16, "var(--ink-dim)");
+  actionBtns[2].innerHTML = svgIcon("gear", 16, "var(--ink-dim)");
+  actionBtns[0].addEventListener("click", openHistory);
+  actionBtns[1].addEventListener("click", openSearch);
+  actionBtns[2].addEventListener("click", openSettings);
 
   app.appendChild(header);
   app.appendChild(el("div", { id:"banner-host" }));
