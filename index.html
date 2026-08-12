@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Meridian" />
 <meta name="robots" content="noindex" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none';" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self' https://tjdrafrolobgkqrxitwq.supabase.co wss://tjdrafrolobgkqrxitwq.supabase.co; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none';" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238C7EE0'/%3E%3Cstop offset='1' stop-color='%237C97E8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='2.5'/%3E%3C/svg%3E" />
 <title>Meridian — your session home</title>
 <style>
@@ -176,21 +176,135 @@
   input[type="file"]{ display:none; }
   @media (max-width:640px){ .fab{ display:flex; } }
   @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+
+  /* ---------- auth gate ---------- */
+  .auth-wrap{ max-width:360px; margin:0 auto; padding:64px 20px 40px; min-height:100vh; display:flex; flex-direction:column; }
+  .auth-mark{ width:52px; height:52px; border-radius:18px; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,var(--lavender),var(--periwinkle)); margin-bottom:18px; }
+  .auth-wrap h1{ font-size:22px; margin:0 0 6px; }
+  .auth-wrap p.sub{ font-size:13.5px; color:var(--ink-faint); margin:0 0 26px; line-height:1.5; }
+  .auth-field{ margin-bottom:12px; }
+  .auth-field label{ display:block; font-size:12px; font-weight:700; color:var(--ink-dim); margin-bottom:6px; }
+  .auth-field input{ width:100%; padding:13px 14px; border-radius:14px; background:var(--card); box-shadow:inset 0 0 0 1.5px var(--line); font-size:14px; color:var(--ink); }
+  .auth-field input:focus{ box-shadow:inset 0 0 0 1.5px var(--lavender); outline:none; }
+  .auth-submit{ width:100%; padding:14px; border-radius:16px; background:var(--lavender); color:#fff; font-weight:700; font-size:14.5px; margin-top:6px; }
+  .auth-submit:active{ transform:scale(.98); }
+  .auth-submit:disabled{ opacity:.55; }
+  .auth-google{ width:100%; padding:13px; border-radius:16px; background:var(--card); box-shadow:inset 0 0 0 1.5px var(--line); font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px; }
+  .auth-google:active{ transform:scale(.98); }
+  .auth-divider{ display:flex; align-items:center; gap:10px; color:var(--ink-faint); font-size:11.5px; font-weight:700; text-transform:uppercase; margin-bottom:16px; }
+  .auth-divider::before, .auth-divider::after{ content:""; flex:1; height:1px; background:var(--line); }
+  .auth-switch{ text-align:center; font-size:13px; color:var(--ink-faint); margin-top:20px; }
+  .auth-switch button{ color:var(--lavender-deep); font-weight:700; }
+  .auth-error{ background:var(--rose-soft); color:var(--rose); font-size:12.5px; font-weight:600; padding:10px 13px; border-radius:12px; margin-bottom:14px; line-height:1.4; }
+  .auth-notice{ background:var(--mint-soft); color:#2f8a72; font-size:12.5px; font-weight:600; padding:10px 13px; border-radius:12px; margin-bottom:14px; line-height:1.4; }
+  .auth-loading{ display:flex; align-items:center; justify-content:center; min-height:100vh; color:var(--ink-faint); font-size:13.5px; font-weight:600; }
 </style>
 </head>
 <body>
-<div id="app" class="wrap" role="main"></div>
+<div id="auth-host"></div>
+<div id="app" class="wrap" role="main" style="display:none;"></div>
 <button id="fab" class="fab" aria-label="Quick add note" type="button"></button>
 <input id="import-input" type="file" accept="application/json,.json" />
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 "use strict";
 
 /* =========================================================
-   Meridian — a private, local memory container for your AI sessions.
-   Platform → Account → Session → Notes, all on-device.
-   No network requests, no analytics, no third-party scripts.
+   Meridian — a private memory container for your AI sessions.
+   Platform → Account → Session → Notes.
+   Auth via Supabase (Google + email/password). Vault data itself
+   still lives in local storage on this device — not yet synced
+   to Supabase tables. No analytics, no other third-party scripts.
 ========================================================= */
+
+/* ---------- supabase auth ---------- */
+var SUPABASE_URL = "https://tjdrafrolobgkqrxitwq.supabase.co";
+var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqZHJhZnJvbG9iZ2txcnhpdHdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0OTE1MTgsImV4cCI6MjEwMjA2NzUxOH0.cGWTARlpAj4VYN8If80UKhu9W9X48hmx7ASW6thBz7c";
+var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+var authHost = document.getElementById("auth-host");
+var authMode = "signin"; /* 'signin' | 'signup' */
+
+function authGoogleIcon(){
+  return '<svg width="17" height="17" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.87 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.98A9 9 0 0 0 0 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .98 4.97l2.97 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>';
+}
+function renderAuthScreen(errorMsg, noticeMsg){
+  app.style.display = "none";
+  var isSignup = authMode === "signup";
+  authHost.innerHTML = "";
+  var wrap = el("div", { class:"auth-wrap" });
+  var mark = el("div", { class:"auth-mark" }); mark.innerHTML = svgIcon("sparkle", 22, "#fff");
+  wrap.appendChild(mark);
+  wrap.appendChild(el("h1", { class:"display", text: isSignup ? "Create your account" : "Welcome back" }));
+  wrap.appendChild(el("p", { class:"sub", text: isSignup ? "Set up Meridian to sync your sessions across devices." : "Sign in to your Meridian account." }));
+  if (errorMsg) wrap.appendChild(el("div", { class:"auth-error", text: errorMsg }));
+  if (noticeMsg) wrap.appendChild(el("div", { class:"auth-notice", text: noticeMsg }));
+
+  var googleBtn = el("button", { class:"auth-google", type:"button" });
+  googleBtn.innerHTML = authGoogleIcon() + '<span>Continue with Google</span>';
+  googleBtn.addEventListener("click", signInWithGoogle);
+  wrap.appendChild(googleBtn);
+  wrap.appendChild(el("div", { class:"auth-divider", text:"or" }));
+
+  var form = el("form", {});
+  var emailField = el("div", { class:"auth-field" }, [
+    el("label", { text:"Email" }),
+    el("input", { type:"email", id:"auth-email", autocomplete:"email", required:"required" })
+  ]);
+  var pwField = el("div", { class:"auth-field" }, [
+    el("label", { text:"Password" }),
+    el("input", { type:"password", id:"auth-password", autocomplete: isSignup ? "new-password" : "current-password", required:"required", minlength:"6" })
+  ]);
+  form.appendChild(emailField);
+  form.appendChild(pwField);
+  var submitBtn = el("button", { class:"auth-submit", type:"submit", text: isSignup ? "Sign up" : "Sign in" });
+  form.appendChild(submitBtn);
+  form.addEventListener("submit", function(e){
+    e.preventDefault();
+    var email = document.getElementById("auth-email").value.trim();
+    var pw = document.getElementById("auth-password").value;
+    if (isSignup) signUpEmail(email, pw); else signInEmail(email, pw);
+  });
+  wrap.appendChild(form);
+
+  var switchRow = el("div", { class:"auth-switch" });
+  var switchBtn = el("button", { type:"button", text: isSignup ? "Sign in instead" : "Create an account" });
+  switchBtn.addEventListener("click", function(){ authMode = isSignup ? "signin" : "signup"; renderAuthScreen(); });
+  switchRow.appendChild(document.createTextNode(isSignup ? "Already have an account? " : "New here? "));
+  switchRow.appendChild(switchBtn);
+  wrap.appendChild(switchRow);
+
+  authHost.innerHTML = "";
+  authHost.appendChild(wrap);
+}
+function renderAuthLoading(){
+  authHost.innerHTML = "";
+  authHost.appendChild(el("div", { class:"auth-loading", text:"Loading…" }));
+}
+async function signInWithGoogle(){
+  var redirectTo = window.location.origin + window.location.pathname;
+  var res = await sb.auth.signInWithOAuth({ provider:"google", options:{ redirectTo: redirectTo } });
+  if (res.error) renderAuthScreen(res.error.message);
+}
+async function signUpEmail(email, pw){
+  if (!email || !pw){ renderAuthScreen("Enter an email and password."); return; }
+  var res = await sb.auth.signUp({ email: email, password: pw });
+  if (res.error){ renderAuthScreen(res.error.message); return; }
+  if (res.data && res.data.user && !res.data.session){
+    authMode = "signin";
+    renderAuthScreen(null, "Check your email to confirm your account, then sign in.");
+    return;
+  }
+  /* session exists immediately (email confirmation off) — auth listener will boot the app */
+}
+async function signInEmail(email, pw){
+  if (!email || !pw){ renderAuthScreen("Enter your email and password."); return; }
+  var res = await sb.auth.signInWithPassword({ email: email, password: pw });
+  if (res.error) renderAuthScreen(res.error.message);
+}
+async function signOutUser(){
+  await sb.auth.signOut();
+}
 
 /* ---------- constants ---------- */
 var STORAGE_KEY = "meridian:vault:v1";
@@ -1049,6 +1163,8 @@ function openSettings(){
   var body = el("div", { class:"sheet-body" });
   var section1 = el("div");
   section1.innerHTML =
+    '<div class="settings-section-label">Account</div>' +
+    '<div class="settings-row"><div><div id="settings-account-email">Signed in</div><div class="desc">This device syncs to your Meridian account</div></div><button type="button" class="settings-btn" id="settings-signout">Sign out</button></div>' +
     '<div class="settings-section-label">Backup</div>' +
     '<div class="settings-row"><div><div>Export a backup</div><div class="desc">Save everything as a JSON file</div></div><button type="button" class="settings-btn" id="settings-export">Export</button></div>' +
     '<div class="settings-row"><div><div>Import a backup</div><div class="desc">Replaces everything currently stored</div></div><button type="button" class="settings-btn" id="settings-import">Import</button></div>' +
@@ -1058,6 +1174,14 @@ function openSettings(){
   openSheet("Settings", body, null);
   document.getElementById("settings-export").addEventListener("click", exportData);
   document.getElementById("settings-import").addEventListener("click", function(){ importInput.click(); });
+  document.getElementById("settings-signout").addEventListener("click", function(){
+    closeSheet();
+    signOutUser();
+  });
+  sb.auth.getUser().then(function(res){
+    var emailEl = document.getElementById("settings-account-email");
+    if (emailEl && res.data && res.data.user) emailEl.textContent = res.data.user.email || "Signed in";
+  });
   document.getElementById("settings-clear").addEventListener("click", function(){
     if (!window.confirm("Clear everything? All platforms, accounts, sessions, and notes will be permanently deleted.")) return;
     if (!window.confirm("This can't be undone. Clear everything now?")) return;
@@ -1149,7 +1273,12 @@ function buildShell(){
 }
 
 /* ---------- boot ---------- */
-async function boot(){
+var appBooted = false;
+async function bootApp(){
+  if (appBooted) return;
+  appBooted = true;
+  authHost.innerHTML = "";
+  app.style.display = "";
   buildShell();
   var raw = await storageGet(STORAGE_KEY);
   var parsed = null;
@@ -1163,7 +1292,26 @@ async function boot(){
     renderRecents();
   }, 60000);
 }
-boot();
+function showSignedOut(){
+  appBooted = false;
+  app.style.display = "none";
+  app.innerHTML = "";
+  authMode = "signin";
+  renderAuthScreen();
+}
+
+async function initAuth(){
+  renderAuthLoading();
+  var res = await sb.auth.getSession();
+  if (res.data && res.data.session){ bootApp(); }
+  else { renderAuthScreen(); }
+
+  sb.auth.onAuthStateChange(function(event, session){
+    if (session && !appBooted){ bootApp(); }
+    else if (!session && appBooted){ showSignedOut(); }
+  });
+}
+initAuth();
 </script>
 </body>
 </html>
